@@ -1,6 +1,12 @@
-* ------- 01 clean raw data -------
-* ---------------------------------
-do "C:\Users\salins4\OneDrive - Aalto University\Desktop\Stata MM Replication\Code\00_setup.do"
+
+
+*=============================================================
+* 01_clean_raw_data.do 
+* Run after 00_setup.do has set $ROOT $RAW $PROLIFIC $CLEAN
+*=============================================================
+
+
+do "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication\Code\00_setup.do"
 
 local v5file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v5_December 20, 2023_09.23.csv"
 display "`v5file'"
@@ -9,11 +15,10 @@ import delimited "`v5file'", clear varnames(nonames) case(preserve) bindquote(st
 
 
 *=============================================================
-* 01_clean_raw_data.do  (Family 1: v5, v13, v11 — paste-pair beliefs)
-* Run after 00_setup.do has set $ROOT $RAW $PROLIFIC $CLEAN
+*        Family 1: paste-pair beliefs (v5, v13, v11)
 *=============================================================
 
-*-------------------------------------------------------------
+
 * Helper: coalesce a pasted pair of columns into one, flagging
 * any true collisions (both non-missing — R would set these NA)
 *-------------------------------------------------------------
@@ -28,7 +33,7 @@ program define coalesce_pair
     }
 end
 
-*-------------------------------------------------------------
+
 * Helper: import + standardize one Prolific demographics file
 *-------------------------------------------------------------
 capture program drop load_one_prolific
@@ -43,7 +48,6 @@ program define load_one_prolific
     recast str24 id
 end
 
-*-------------------------------------------------------------
 * Main Family 1 cleaner (mirrors R's clean_two_round_paste())
 *   args: rawfile output pos1(choiceB_r1) pos2(choiceB_r2) oddpos("" if none) prolifictmp
 *-------------------------------------------------------------
@@ -52,6 +56,11 @@ program define clean_family1
     args rawfile output pos1 pos2 oddpos prolifictmp
 
     import delimited "`rawfile'", clear varnames(nonames) case(preserve) bindquote(strict) stringcols(_all)
+	
+	* Dedup raw submissions by prolific_id (R's clean_two_round_paste omits
+    * this dedup, unlike clean_interference — see discrepancy_log.md)
+    sort v35
+    by v35: keep if _n == 1
 
     rename v1 StartDate
     rename v4 duration
@@ -227,9 +236,8 @@ program define clean_family1
     di as result "==== `output' complete: " _N " rows ===="
 end
 
-*=============================================================
 * Build Prolific demographic files (per experiment)
-*=============================================================
+*---------------------------------------------------------------
 load_one_prolific "v5Prolific_1.csv"
 tempfile v5p1
 save `v5p1'
@@ -246,9 +254,9 @@ load_one_prolific "v11Prolific.csv"
 tempfile prolific_v11
 save `prolific_v11'
 
-*=============================================================
+
 * Run Family 1
-*=============================================================
+*---------------------------------------------------------------
 local v5file  "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v5_December 20, 2023_09.23.csv"
 local v13file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v13_December 20, 2023_09.55.csv"
 local v11file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v11_December 20, 2023_10.05.csv"
@@ -256,3 +264,141 @@ local v11file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v11_D
 clean_family1 "`v5file'"  "v5"  439 442 ""    "`prolific_v5'"
 clean_family1 "`v13file'" "v13" 440 443 ""    "`prolific_v13'"
 clean_family1 "`v11file'" "v11" 440 443 439   "`prolific_v11'"
+
+
+
+
+
+*=============================================================
+* Family 2: one-round, single-column belief format  (v17, v24)
+*=============================================================
+
+capture program drop clean_family2
+program define clean_family2
+    args rawfile output p_bonus p_choicedo p_choiceb p_choicestr p_rand p_cond p_q1 p_q2 p_b1 p_b2 p_b3 p_b4 p_b5 p_b6 p_risk p_stat p_regretante p_regretpost p_sampling p_viewstart p_viewn prolifictmp
+
+    import delimited "`rawfile'", clear varnames(nonames) case(preserve) bindquote(strict) stringcols(_all)
+
+    rename v1 StartDate
+    rename v4 duration
+    rename v35 id
+    rename v`p_bonus' bonus_payment
+    rename v`p_choicedo' choice_round_1_DO
+    rename v`p_choiceb' choiceB_r1
+    rename v`p_choicestr' choice_strength_r1
+    rename v`p_rand' rand_long_short_order
+    rename v`p_cond' cond_beliefs_choice_order
+    rename v`p_q1' Q14_1_1
+    rename v`p_q2' Q14_1_2
+    rename v`p_b1' r1beliefs_alt1_1
+    rename v`p_b2' r1beliefs_alt1_2
+    rename v`p_b3' r1beliefs_alt1_3
+    rename v`p_b4' r1beliefs_alt2_1
+    rename v`p_b5' r1beliefs_alt2_2
+    rename v`p_b6' r1beliefs_alt2_3
+    rename v`p_risk' riskTaking
+    rename v`p_stat' statKnow
+    rename v`p_regretante' regretExAnte
+    rename v`p_regretpost' regretExPost
+    rename v`p_sampling' round1_combined_array
+
+    local viewpos `p_viewstart'
+    local viewlist ""
+    forvalues i = 1/`p_viewn' {
+        rename v`viewpos' view`i'
+        local viewlist "`viewlist' view`i'"
+        local viewpos = `viewpos' + 4
+    }
+
+    * dedup raw submissions by id (see discrepancy_log.md)
+    sort id
+    by id: keep if _n == 1
+
+    recast strL id
+
+    keep StartDate duration id bonus_payment choice_round_1_DO choiceB_r1 choice_strength_r1 rand_long_short_order cond_beliefs_choice_order Q14_1_1 Q14_1_2 r1beliefs_alt1_1 r1beliefs_alt1_2 r1beliefs_alt1_3 r1beliefs_alt2_1 r1beliefs_alt2_2 r1beliefs_alt2_3 riskTaking statKnow regretExAnte regretExPost round1_combined_array `viewlist'
+
+    keep if regexm(id, "^[0-9a-f]{24}$") & id != "000000000000000000000000"
+
+    destring duration riskTaking statKnow regretExAnte regretExPost Q14_1_1 Q14_1_2 r1beliefs_alt1_1 r1beliefs_alt1_2 r1beliefs_alt1_3 r1beliefs_alt2_1 r1beliefs_alt2_2 r1beliefs_alt2_3 choice_strength_r1 choiceB_r1, replace force
+
+    rename Q14_1_1 beliefA
+    rename Q14_1_2 beliefB
+    rename r1beliefs_alt1_1 beliefA_below
+    rename r1beliefs_alt1_2 beliefA_equal
+    rename r1beliefs_alt1_3 beliefA_above
+    rename r1beliefs_alt2_1 beliefB_below
+    rename r1beliefs_alt2_2 beliefB_equal
+    rename r1beliefs_alt2_3 beliefB_above
+    rename choice_strength_r1 choiceStr
+
+    gen whichFirst = ""
+    replace whichFirst = "B" if substr(choice_round_1_DO, -1, 1) == "A"
+    replace whichFirst = "A" if whichFirst == "" & substr(choice_round_1_DO, -1, 1) == "B"
+
+    gen choiceB = choiceB_r1 - 1
+    gen short = (rand_long_short_order == "short_first")
+    gen round = 1
+
+    egen nmiss = rowmiss(bonus_payment choiceB cond_beliefs_choice_order riskTaking statKnow regretExAnte regretExPost duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round)
+    drop if nmiss > 0
+    drop nmiss
+
+    recast str24 id
+    merge m:1 id using "`prolifictmp'", keep(match) nogenerate
+
+    drop if student == "CONSENT_REVOKED"
+    capture drop df
+    gen df = "`output'"
+
+    keep id bonus_payment choiceB cond_beliefs_choice_order riskTaking statKnow regretExAnte regretExPost duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round `viewlist' rand_long_short_order age sex student df
+
+    export delimited using "$CLEAN/`output'_stata.csv", replace
+    di as result "==== `output' complete: " _N " rows ===="
+end
+
+* Build Prolific files + run Family 2
+*=------------------------------------------------------------
+tempfile prolific_v17
+import delimited "$PROLIFIC\v17Prolific.csv", clear varnames(nonames) case(preserve) bindquote(strict) stringcols(_all)
+drop if _n == 1
+rename v1 id
+rename v2 age
+rename v3 sex
+rename v4 student
+recast str24 id
+save `prolific_v17'
+
+tempfile prolific_v24
+import delimited "$PROLIFIC\v24Prolific.csv", clear varnames(nonames) case(preserve) bindquote(strict) stringcols(_all)
+drop if _n == 1
+rename v1 id
+rename v2 age
+rename v3 sex
+rename v4 student
+recast str24 id
+save `prolific_v24'
+
+local v17file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v17_December 20, 2023_10.10.csv"
+local v24file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v24_December 26, 2023_15.45.csv"
+
+clean_family2 "`v17file'" "v17" 440 292 457 293 450 449 294 295 297 298 299 300 301 302 431 432 433 434 454 45 11 "`prolific_v17'"
+clean_family2 "`v24file'" "v24" 393 260 408 261 401 400 262 263 265 266 267 268 269 270 384 385 386 387 405 45 3  "`prolific_v24'"
+
+
+
+
+
+
+*=============================================================
+* Family 3:     interference experiments (v21, v27)
+*=============================================================
+
+
+
+
+
+
+
+
+

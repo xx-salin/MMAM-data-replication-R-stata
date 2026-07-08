@@ -3,7 +3,7 @@
 * Simplest version: hardcode the repo root, set paths from it.
 *-----------------------------------------------------------
 
-global ROOT "C:\Users\salins4\OneDrive - Aalto University\Desktop\Stata MM Replication"
+global ROOT "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication"
 
 global RAW      "$ROOT\Data\Raw Data"
 global PROLIFIC "$ROOT\Data\Prolific Data"
