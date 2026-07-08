@@ -14,6 +14,5 @@ matches the deduplication R already does explicitly in `clean_interference()`
 (family 3, v21/v27) but omits in `clean_two_round_paste()` (family 1).
 
 **Decision:** Treated as an R bug, not replicated. Stata output for v11 will
-differ from R's v11.csv by design (~122 vs 134 rows). Affects only
-participants with duplicate raw survey submissions — check v5/v13/v17/v24/
-v21/v27/prereg for the same issue before assuming this is isolated to v11.
+differ from R's v11.csv by design (~118 vs 134 rows). Affects only
+participants with duplicate raw survey submissions (9x2 - 1x2 = 16 obs difference).
