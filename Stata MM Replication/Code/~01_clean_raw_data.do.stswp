@@ -1,5 +1,7 @@
 
 
+
+
 *=============================================================
 * 01_clean_raw_data.do
 * Run after 00_setup.do has set $ROOT $RAW $PROLIFIC $CLEAN
@@ -13,7 +15,7 @@ do "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replicati
 
 *-------------------------------------------------------------
 * Helper: coalesce a pasted pair of columns into one, flagging
-* any true collisions (both non-missing — R would set these NA)
+* any true collisions (both non-missing, R would set these NA)
 *-------------------------------------------------------------
 capture program drop coalesce_pair
 program define coalesce_pair
@@ -53,7 +55,7 @@ program define clean_family1
 
     * Dedup raw submissions by prolific_id, keeping the FIRST submission in
     * original file order (R's clean_two_round_paste omits this dedup,
-    * unlike clean_interference — see discrepancy_log.md). sort id alone is
+    * unlike clean_interference, see discrepancy_log.md). sort id alone is
     * NOT stable in Stata, so we force a deterministic tiebreak.
     gen long _orig_order = _n
     sort v35 _orig_order
@@ -125,8 +127,21 @@ program define clean_family1
 
     keep if regexm(id, "^[0-9a-f]{24}$") & id != "000000000000000000000000"
 
-    destring riskTaking statKnow regretExAnte regretExPost duration ///
-        beliefs_r1_1_1 beliefs_r1_1_1_1 beliefs_r1_1_2 beliefs_r1_1_2_1 ///
+    * Standard fields safe to destring to float (no precision concerns)
+    destring duration, replace force
+
+    * riskTaking/statKnow/regretExAnte/regretExPost: R NEVER numeric-casts
+    * these (they stay character throughout). Do NOT destring, leave as raw
+    * imported string so blank "" is preserved (not Stata missing) and any
+    * literal "NA" text round-trips exactly as R's read.csv()/write.csv()
+    * would produce. Excluded from the nmiss check below for the same reason
+    * (see Family 4 clean_prereg for the pattern this mirrors).
+
+    * Belief + choice-strength paste-pair source columns: destring rounds to
+    * float32 BEFORE coalesce_pair can widen it, permanently losing precision
+    * (same issue as view times, see discrepancy_log.md). Parse to double
+    * via real() instead of destring.
+    foreach v of varlist beliefs_r1_1_1 beliefs_r1_1_1_1 beliefs_r1_1_2 beliefs_r1_1_2_1 ///
         beliefs_alt1_r1_1 beliefs_alt1_r1_1_1 beliefs_alt1_r1_2 beliefs_alt1_r1_2_1 ///
         beliefs_alt1_r1_3 beliefs_alt1_r1_3_1 beliefs_alt2_r1_1 beliefs_alt2_r1_1_1 ///
         beliefs_alt2_r1_2 beliefs_alt2_r1_2_1 beliefs_alt2_r1_3 beliefs_alt2_r1_3_1 ///
@@ -134,7 +149,11 @@ program define clean_family1
         beliefs_alt1_r2_1 beliefs_alt1_r2_1_1 beliefs_alt1_r2_2 beliefs_alt1_r2_2_1 ///
         beliefs_alt1_r2_3 beliefs_alt1_r2_3_1 beliefs_alt2_r2_1 beliefs_alt2_r2_1_1 ///
         beliefs_alt2_r2_2 beliefs_alt2_r2_2_1 beliefs_alt2_r2_3 beliefs_alt2_r2_3_1 ///
-        desc_choice_str_r1 desc_choice_str_r1_1 desc_choice_str_r2 desc_choice_str_r2_1, replace force
+        desc_choice_str_r1 desc_choice_str_r1_1 desc_choice_str_r2 desc_choice_str_r2_1 {
+        gen double _tmp_`v' = real(`v')
+        drop `v'
+        rename _tmp_`v' `v'
+    }
 
     coalesce_pair r1_beliefA        beliefs_r1_1_1      beliefs_r1_1_1_1
     coalesce_pair r1_beliefB        beliefs_r1_1_2      beliefs_r1_1_2_1
@@ -217,7 +236,9 @@ program define clean_family1
     use `round1', clear
     append using `round2'
 
-    local misscols "bonus_payment choiceB cond_beliefs_choice_order riskTaking statKnow regretExAnte regretExPost duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round"
+    * na.omit()-equivalent, riskTaking/statKnow/regretExAnte/regretExPost
+    * deliberately excluded (see note above the destring line)
+    local misscols "bonus_payment choiceB cond_beliefs_choice_order duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round"
     if "`oddpos'" != "" local misscols "`misscols' oddState"
     egen nmiss = rowmiss(`misscols')
     drop if nmiss > 0
@@ -268,13 +289,9 @@ clean_family1 "`v11file'" "v11" 440 443 439   "`prolific_v11'"
 
 
 
-
-
 *=============================================================
 * Family 2: one-round, single-column belief format  (v17, v24)
 *=============================================================
-
-do "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication\Code\00_setup.do"
 
 capture program drop clean_family2
 program define clean_family2
@@ -325,7 +342,18 @@ program define clean_family2
 
     keep if regexm(id, "^[0-9a-f]{24}$") & id != "000000000000000000000000"
 
-    destring duration riskTaking statKnow regretExAnte regretExPost Q14_1_1 Q14_1_2 r1beliefs_alt1_1 r1beliefs_alt1_2 r1beliefs_alt1_3 r1beliefs_alt2_1 r1beliefs_alt2_2 r1beliefs_alt2_3 choice_strength_r1 choiceB_r1, replace force
+    * Standard fields safe to destring to float
+    destring duration choice_strength_r1 choiceB_r1, replace force
+
+    * riskTaking/statKnow/regretExAnte/regretExPost: never numeric-cast in R —
+    * leave as raw string (do not destring). Excluded from nmiss below.
+
+    * Belief columns: parse to double via real(), not destring (avoids float32 loss).
+    foreach v of varlist Q14_1_1 Q14_1_2 r1beliefs_alt1_1 r1beliefs_alt1_2 r1beliefs_alt1_3 r1beliefs_alt2_1 r1beliefs_alt2_2 r1beliefs_alt2_3 {
+        gen double _tmp_`v' = real(`v')
+        drop `v'
+        rename _tmp_`v' `v'
+    }
 
     rename Q14_1_1 beliefA
     rename Q14_1_2 beliefB
@@ -345,7 +373,7 @@ program define clean_family2
     gen short = (rand_long_short_order == "short_first")
     gen round = 1
 
-    egen nmiss = rowmiss(bonus_payment choiceB cond_beliefs_choice_order riskTaking statKnow regretExAnte regretExPost duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round)
+    egen nmiss = rowmiss(bonus_payment choiceB cond_beliefs_choice_order duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round)
     drop if nmiss > 0
     drop nmiss
 
@@ -362,7 +390,7 @@ program define clean_family2
     restore
 
     * Separate viewTimes export (R writes this in addition to embedding
-    * views in the main trial file) — reuses the already-cleaned data,
+    * views in the main trial file), reuses the already-cleaned data,
     * no fresh import needed since row-filtering rules are identical.
     preserve
         keep id `viewlist' df
@@ -418,16 +446,6 @@ local v24file "$RAW\Alex Imas - Michael Ungeheuer - Description Experience v24_D
 
 clean_family2 "`v17file'" "v17" 440 292 457 293 450 449 294 295 297 298 299 300 301 302 431 432 433 434 454 45 11 "`prolific_v17'"
 clean_family2 "`v24file'" "v24" 393 260 408 261 401 400 262 263 265 266 267 268 269 270 384 385 386 387 405 45 3  "`prolific_v24'"
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -487,8 +505,18 @@ program define clean_family3
 
     keep if regexm(id, "^[0-9a-f]{24}$") & id != "000000000000000000000000"
 
-    * Standard fields: destring to float is fine here (no precision loss observed)
-    destring duration riskTaking statKnow regretExAnte regretExPost Q14_1_1 Q14_1_2 r1beliefs_alt1_1 r1beliefs_alt1_2 r1beliefs_alt1_3 r1beliefs_alt2_1 r1beliefs_alt2_2 r1beliefs_alt2_3 choice_strength_r1 choiceB_r1, replace force
+    * Standard fields safe to destring to float
+    destring duration choice_strength_r1 choiceB_r1, replace force
+
+    * riskTaking/statKnow/regretExAnte/regretExPost: never numeric-cast in R —
+    * leave as raw string (do not destring). Excluded from nmiss below.
+
+    * Belief columns: parse to double via real(), not destring (avoids float32 loss).
+    foreach v of varlist Q14_1_1 Q14_1_2 r1beliefs_alt1_1 r1beliefs_alt1_2 r1beliefs_alt1_3 r1beliefs_alt2_1 r1beliefs_alt2_2 r1beliefs_alt2_3 {
+        gen double _tmp_`v' = real(`v')
+        drop `v'
+        rename _tmp_`v' `v'
+    }
 
     * View-time columns: destring rounds to float32 BEFORE recast can widen it,
     * permanently losing precision (see discrepancy_log.md). Parse directly to
@@ -517,8 +545,10 @@ program define clean_family3
     gen short = (rand_long_short_order == "short_first")
     gen round = 1
 
-    * na.omit() on core columns only — BEFORE view-time coalescing, matching R's order of operations
-    egen nmiss = rowmiss(bonus_payment choiceB cond_beliefs_choice_order riskTaking statKnow regretExAnte regretExPost duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst a3Col short round)
+    * na.omit() on core columns only, BEFORE view-time coalescing, matching R's
+    * order of operations. riskTaking/statKnow/regretExAnte/regretExPost
+    * deliberately excluded (see note above the destring line).
+    egen nmiss = rowmiss(bonus_payment choiceB cond_beliefs_choice_order duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst a3Col short round)
     drop if nmiss > 0
     drop nmiss
 
@@ -562,11 +592,11 @@ program define clean_family3
 
     *-----------------------------------------------------------
     * Sampling order: FRESH, undeduped raw import (matches R's
-    * separate read_raw(input) call for sampOrder — same offset
+    * separate read_raw(input) call for sampOrder, same offset
     * logic as prereg: drop the header-as-data artifact (Stata-only,
     * from varnames(nonames)), the question-text row, and the
     * ImportId row (R's read_raw()'s built-in [-2,]), then apply
-    * sampOrder's own [-1,] drop — net: drop original rows 1-3.
+    * sampOrder's own [-1,] drop, net: drop original rows 1-3.
     *-----------------------------------------------------------
     preserve
         import delimited "`rawfile'", clear varnames(nonames) case(preserve) bindquote(strict) stringcols(_all)
@@ -615,9 +645,12 @@ clean_family3 "`v27file'" "v27" "v27_trials" "v27_views" "v27_sampling" "1" "`pr
 
 
 
-
 *=============================================================
 * Family 4:     pre-registered experiment (prereg)
+*     unchanged: already uses real()+double for beliefs and
+*       already excludes riskTaking/statKnow/regretExAnte/regretExPost
+*       from its nmiss check. If your last prereg_stata.csv export
+*       predates this file, re-export it before re-diffing.
 *=============================================================
 
 
@@ -727,7 +760,7 @@ program define clean_prereg
     keep if regexm(id, "^[0-9a-f]{24}$") & id != "000000000000000000000000"
 
     * riskTaking/statKnow/regretExAnte/regretExPost are NEVER numeric-cast by R
-    * anywhere in clean_prereg() — they stay character strings, so blank ("")
+    * anywhere in clean_prereg(), they stay character strings, so blank ("")
     * values are not R's NA and never trigger na.omit() drops. Destringing them
     * here would incorrectly convert blanks to Stata missing and wrongly drop
     * otherwise-complete rows (see discrepancy_log.md). Leave them as strings.
@@ -750,7 +783,7 @@ program define clean_prereg
     replace whichFirst_r2 = "B" if whichFirst_r2 == "" & substr(desc_choice_r2_DO_1, -1, 1) == "A"
     replace whichFirst_r2 = "A" if whichFirst_r2 == "" & substr(desc_choice_r2_DO_1, -1, 1) == "B"
 
-    * beliefA/B: condition-gated (NOT a blind coalesce — mirrors R's case_when exactly)
+    * beliefA/B: condition-gated (NOT a blind coalesce, mirrors R's case_when exactly)
     gen double r1_beliefA = .
     replace r1_beliefA = real(Q14_1_1) if cond_presentation == "sampling_noiseless"
     replace r1_beliefA = real(beliefs_r1_1_1) if cond_presentation == "description_noiseless" & cond_beliefs_choice_order == "choice_first"
@@ -834,7 +867,7 @@ program define clean_prereg
     use `round1', clear
     append using `round2'
 
-    * na.omit()-equivalent — riskTaking/statKnow/regretExAnte/regretExPost
+    * na.omit()-equivalent, riskTaking/statKnow/regretExAnte/regretExPost
     * deliberately excluded (see note above the destring line)
     egen nmiss = rowmiss(choiceB cond_presentation cond_beliefs_choice_order duration beliefA beliefB beliefA_below beliefA_equal beliefA_above beliefB_below beliefB_equal beliefB_above choiceStr whichFirst short round)
     drop if nmiss > 0
@@ -853,7 +886,7 @@ program define clean_prereg
     *-----------------------------------------------------------
     * View times + sampling order: built from a FRESH, UNDEDUPED
     * raw import (matches R's read_raw(input) called separately for
-    * each of these — no id-regex filter, no dedup, unlike the main
+    * each of these, no id-regex filter, no dedup, unlike the main
     * trial-level cleaning above).
     *-----------------------------------------------------------
 	
@@ -940,6 +973,5 @@ save `prolific_prereg'
 
 local pregfile "$RAW\Alex Imas - Michael Ungeheuer - Description Experience Prereg_December 20, 2023_10.59.csv"
 clean_prereg "`pregfile'" "`prolific_prereg'"
-
 
 
