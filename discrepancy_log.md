@@ -1,56 +1,54 @@
-## Family 4 (prereg) — verified
+# Discrepancy Log
 
-Exact match against R output: **1561/1561 rows, all 25 columns**, after two
-rounds of fixes below. Confirms the condition-gated belief logic, the 3-way
-`unite()` triples, and the `na.omit()` string/numeric distinction.
+Tracks intentional deviations and bugs found while porting the R data
+cleaning pipeline to Stata.
 
-### riskTaking/statKnow/regretExAnte/regretExPost — string vs numeric na.omit() mismatch (fixed)
-
-**Cause:** R's `clean_prereg()` never numeric-casts `riskTaking`, `statKnow`,
-`regretExAnte`, or `regretExPost` anywhere in the pipeline — they remain
-character strings throughout. Blank values are literal `""`, not R's `NA`,
-so `na.omit()` never drops a row for these fields being empty. The Stata
-port initially `destring`'d these fields before the na.omit-equivalent
-check, converting blanks to Stata missing (`.`) and incorrectly dropping
-otherwise-complete rows.
-
-**Caught by:** Row-count mismatch (1559 vs R's 1561). Diffing by
-`(id, round)` key found 2 missing participants
-(`3c0bcef877f961712412be38`, `d3c7191d61a4723da4c37fe7`), both with blank
-`Q22/Q25/Q24/Q23` in the raw data but otherwise complete responses.
-Confirmed both rows exist in R's own `prereg.csv` output with blank
-`riskTaking`, proving R's `na.omit()` genuinely does not check these
-fields.
-
-**Resolution:** Removed `riskTaking statKnow regretExAnte regretExPost`
-from the `destring` call and from the `rowmiss()` na.omit-equivalent check
-in `clean_prereg`. These fields now pass through as plain strings — blank
-stays blank, matching R exactly.
-
-**Open question:** This same latent issue may exist in Families 1–3
-(`clean_family1`/`2`/`3` all destring and na.omit-check these same four
-fields). It didn't surface there only because no participant in those
-smaller experiments happened to complete the main task while skipping
-these specific survey questions. **Not yet checked** — needs verification
-against the v5/v13/v11/v17/v24/v21/v27 raw files before ruling out.
-
----
-
-## Summary table (01_clean_raw_data.do)
+## 01_clean_raw_data.do summary
 
 | File | Family | Status | Notes |
 |---|---|---|---|
-| v5 | 1 | ✅ Exact match | |
-| v13 | 1 | ✅ Exact match | |
-| v11 | 1 | ✅ Verified, documented deviation | 118 vs 134 rows — R's fan-out bug not replicated |
-| v17 | 2 | ✅ Exact match | |
-| v24 | 2 | ✅ Exact match | |
-| v21 | 3 | ✅ Exact match | |
-| v27 (trials + IDs) | 3 | ✅ Exact match | |
-| prereg | 4 | ✅ Exact match | 1561/1561 rows |
+| v5 | 1 | Match | |
+| v13 | 1 | Match | |
+| v11 | 1 | Match, documented deviation | 118 vs 134 rows, fan-out bug not replicated |
+| v17 | 2 | Match | trial, view times, sampling order |
+| v24 | 2 | Match | trial, view times, sampling order |
+| v21 | 3 | Match | trial, view times, sampling order |
+| v27 | 3 | Match | trial, view times, sampling order, IDs |
+| prereg | 4 | Match | trial, view times, sampling order |
 
-**Remaining for 01_clean_raw_data.do:**
-- View-time (short/long) and sampling-order (round1/round2) exports for
-  `clean_prereg` — deferred while verifying the trial-level file
-- Check v5/v13/v11/v17/v24/v21/v27 raw files for the same blank-survey-
-  question pattern as the prereg fix above
+## Issue 1: riskTaking/statKnow/regretExAnte/regretExPost treated as numeric (fixed)
+
+R never numeric-casts these fields, so blank stays blank and is never
+dropped by na.omit(). Stata was destringing them first, turning blanks
+into missing and wrongly dropping complete rows. Fixed by leaving them as
+plain strings in all four family programs.
+
+## Issue 2: belief columns losing precision through float32 (fixed)
+
+Belief columns were destrung, which defaults to float and rounds values
+like 33.4 to 33.400002. Fixed by parsing with real() into double instead,
+in clean_family1/2/3.
+
+## Issue 3: belief precision reintroduced on reimport (fixed)
+
+02_combine_data.do reimported the already-fixed CSVs with import
+delimited, which defaults decimal columns back to float. Fixed by adding
+the asdouble option to every import in that script.
+
+## Issue 4: v11 fan-out bug (accepted, not replicated)
+
+R's join logic multiplies rows for one participant with multiple raw
+submissions, producing 9 extra rows per round in R only. Not replicated
+in Stata, matching R's own dedup approach used elsewhere.
+
+## Issue 5: NA text vs blank string in combinedDF (accepted, cosmetic)
+
+Two prereg participants show as blank in Stata but literal "NA" text in
+R's combined output, though both sources agree blank at the prereg-file
+level. Accepted as an R-side rbind() artifact with no analytical impact.
+
+## 02_combine_data.do status
+
+Matches R's dataForMichael.csv except for the 16 rows from Issue 4 and 8
+cells from Issue 5. No other differences found.
+
