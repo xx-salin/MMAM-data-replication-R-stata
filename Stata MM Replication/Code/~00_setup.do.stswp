@@ -17,8 +17,6 @@
 * cd "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication\Code"
 *-----------------------------------------------------------
 
-cd "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication\Code"
-
 local startdir "`c(pwd)'"
 local found 0
 

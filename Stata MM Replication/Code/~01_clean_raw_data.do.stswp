@@ -7,7 +7,7 @@
 * Run after 00_setup.do has set $ROOT $RAW $PROLIFIC $CLEAN
 *=============================================================
 
-do "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication\Code\00_setup.do"
+do "00_setup.do"
 
 *=============================================================
 *        Family 1: paste-pair beliefs (v5, v13, v11)

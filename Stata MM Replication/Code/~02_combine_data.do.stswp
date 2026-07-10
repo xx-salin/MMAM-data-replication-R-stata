@@ -7,7 +7,8 @@
 * Output: `combinedDF', the trial-level data set, in memory, that pools the experiments used in the paper's main choice/belief figures.
 *=============================================================
 
-do "C:\Users\salins4\OneDrive - Aalto University\Desktop\MMAM\Stata MM Replication\Code\00_setup.do"
+
+do "00_setup.do"
 
 * Belief columns must be forced to double on import, import delimited
 * defaults decimal columns to float, which silently reintroduces float32
