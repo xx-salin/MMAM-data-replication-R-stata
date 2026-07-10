@@ -16,6 +16,18 @@ cleaning pipeline to Stata.
 | v27 | 3 | Match | trial, view times, sampling order, IDs |
 | prereg | 4 | Match | trial, view times, sampling order |
 
+## 02_combine_data.do status
+
+Matches R's dataForMichael.csv on all 2212 rows and 25 columns, except the
+16 rows explained by Issue 4 and 8 cells explained by Issue 5.
+
+## 03_sampling_sequences.do status
+
+Matches R's samplingSequences_long.csv on all 29036 rows across all 4
+experiments, and on every content column (outcomeA, outcomeB, spread,
+viewTime, choiceB, nPairs, isLastPair). Only difference is whichFirst and
+a3Col showing blank vs "NA" text, explained by Issue 5.
+
 ## Issue 1: riskTaking/statKnow/regretExAnte/regretExPost treated as numeric (fixed)
 
 R never numeric-casts these fields, so blank stays blank and is never
@@ -31,9 +43,9 @@ in clean_family1/2/3.
 
 ## Issue 3: belief precision reintroduced on reimport (fixed)
 
-02_combine_data.do reimported the already-fixed CSVs with import
-delimited, which defaults decimal columns back to float. Fixed by adding
-the asdouble option to every import in that script.
+import delimited defaults decimal columns to float on reimport regardless
+of source precision. Fixed by adding the asdouble option to every import
+in 02_combine_data.do and 03_sampling_sequences.do.
 
 ## Issue 4: v11 fan-out bug (accepted, not replicated)
 
@@ -41,14 +53,24 @@ R's join logic multiplies rows for one participant with multiple raw
 submissions, producing 9 extra rows per round in R only. Not replicated
 in Stata, matching R's own dedup approach used elsewhere.
 
-## Issue 5: NA text vs blank string in combinedDF (accepted, cosmetic)
+## Issue 5: NA text vs blank string for absent columns (accepted, cosmetic)
 
-Two prereg participants show as blank in Stata but literal "NA" text in
-R's combined output, though both sources agree blank at the prereg-file
-level. Accepted as an R-side rbind() artifact with no analytical impact.
+When a column does not apply to an experiment (riskTaking etc for 2
+prereg participants, or whichFirst/a3Col for prereg and v17 rows), R's
+bind_rows/rbind fills it with NA and writes it as literal "NA" text,
+while Stata leaves it blank. Both represent the same missing value, no
+downstream figure script reads these columns, accepted with no fix.
 
-## 02_combine_data.do status
+## Issue 6: stray Qualtrics text row in prereg viewTimes export (accepted, worked around)
 
-Matches R's dataForMichael.csv except for the 16 rows from Issue 4 and 8
-cells from Issue 5. No other differences found.
+clean_prereg's raw viewTimes export intends to drop the Qualtrics
+question-text row via "keep if view1 != ''", but Timing/Page-Submit
+questions put descriptive text there instead of blank, so the row
+survives into prereg_short_stata.csv and prereg_long_stata.csv. R is
+unaffected since as.numeric() silently turns the text row to NA and
+filter(!is.na()) drops it. 03_sampling_sequences.do reproduces the same
+defensive handling by importing view* as string and converting with
+real() before dropping missing rows, so no fix to 01_clean_raw_data.do
+was needed.
+
 
